@@ -1,16 +1,31 @@
 import os
-import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from edge_tts import Communicate
+import logging
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from gtts import gTTS
 
-app = FastAPI(title="AI Marketing Voice Automation Platform")
+# تنظیمات لاگر مشابه پروژه قبلی شما
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-class TextRequest(BaseModel):
-    text: str
-    voice: str = "fa-IR-FaridNeural"
+# --- بخش برنده: سرور سلامت جانبی مخصوص هاست رندر ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def log_message(self, format, *args):
+        return
 
+def run_health_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    logger.info(f"Health check server started on port {port}")
+    server.serve_forever()
+# ---------------------------------------------------
+
+# تابع اعراب‌گذاری خودکار کلمات تبلیغاتی
 def preprocess_persian_text(text: str) -> str:
     replacements = {
         "خرید آنلاین": "خریدِ آنلاین",
@@ -30,35 +45,33 @@ def preprocess_persian_text(text: str) -> str:
         processed_text = processed_text.replace(word, corrected)
     return processed_text
 
-@app.get("/")
-def home():
-    return {"status": "healthy", "message": "پلتفرم با موفقیت فعال است."}
-
-@app.post("/generate-voice/")
-async def generate_voice_api(request: TextRequest):
-    if not request.text.strip():
-        raise HTTPException(status_code=400, detail="متن ورودی نمی‌تواند خالی باشد.")
+# تابع اصلی تولید فایل صوتی
+def generate_voice(text: str, output_filename: str = "advertising_voice.mp3"):
+    if not text.strip():
+        logger.error("متن ورودی خالی است.")
+        return
     
-    clean_text = preprocess_persian_text(request.text)
-    # استفاده از مسیر /tmp که در رندر همیشه قابل نوشتن است
-    output_filename = "/tmp/output_voice.mp3"
-    
-    rate = "+15%"
-    volume = "+0%"
-    
+    clean_text = preprocess_persian_text(text)
     try:
-        communicate = Communicate(clean_text, request.voice, rate=rate, volume=volume)
-        await communicate.save(output_filename)
-        
-        if os.path.exists(output_filename):
-            return FileResponse(output_filename, media_type="audio/mpeg", filename="output_voice.mp3")
-        else:
-            raise HTTPException(status_code=500, detail="فایل صوتی ایجاد نشد.")
-            
+        logger.info("🎙️ در حال تولید فایل صوتی با موتور گوگل...")
+        tts = gTTS(text=clean_text, lang='fa', slow=False)
+        tts.save(output_filename)
+        logger.info(f"✅ فایل صوتی با موفقیت ذخیره شد: {output_filename}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"خطا در پردازش صدا: {str(e)}")
+        logger.error(f"خطا در تولید صدا: {e}")
 
-# بخش بسیار مهم برای Render:
+def main():
+    # ۱. روشن کردن سرور سلامت در یک Thread جداگانه (دقیقاً مثل رژیم پلاس)
+    threading.Thread(target=run_health_server, daemon=True).start()
+
+    # ۲. اجرای تست اولیه تولید صدا
+    sample_text = "به پلتفرم اتوماسیون محتوای تبلیغاتی ما خوش آمدید. تخفیف ویژه برای خرید آنلاین کسب و کار شما."
+    generate_voice(sample_text)
+
+    # زنده نگه داشتن اسکریپت اصلی تا سرور سلامت قطع نشود
+    import time
+    while True:
+        time.sleep(3600)
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    main()
