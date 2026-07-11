@@ -1,13 +1,19 @@
 import asyncio
 import os
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from edge_tts import Communicate
 
-# ۱. تابع اعراب‌گذاری خودکار کلمات کلیدی و مضاف/مضاف‌الیه تبلیغاتی
+app = FastAPI(title="AI Marketing Voice Automation Platform")
+
+# مدل داده‌ای برای ورودی متن
+class TextRequest(BaseModel):
+    text: str
+    voice: str = "fa-IR-FaridNeural"  # پیش‌فرض صدای مرد
+
+# تابع اعراب‌گذاری خودکار کلمات تبلیغاتی
 def preprocess_persian_text(text: str) -> str:
-    """
-    این تابع کلمات کلیدی تبلیغاتی را برای تلفظ صحیح‌تر در edge-tts بهینه‌سازی می‌کند.
-    می‌توانی کلمات جدید و نحوه تلفظ صحیح آن‌ها را به این دیکشنری اضافه کنی.
-    """
     replacements = {
         "خرید آنلاین": "خریدِ آنلاین",
         "کسب و کار": "کسب و کار",
@@ -21,49 +27,43 @@ def preprocess_persian_text(text: str) -> str:
         "پلتفرم": "پلتفرم",
         "اتوماسیون": "اتوماسیون",
     }
-    
     processed_text = text
     for word, corrected in replacements.items():
         processed_text = processed_text.replace(word, corrected)
-    
     return processed_text
 
-# ۲. تابع اصلی تولید صدا
-async def generate_voice(text: str, output_filename: str = "output.mp3", voice: str = "fa-IR-FaridNeural"):
-    """
-    تولید فایل صوتی از متن با سرعت بالا و انرژی مناسب ویدیوهای تبلیغاتی
-    تنظیمات صدای مرد: fa-IR-FaridNeural
-    تنظیمات صدای زن: fa-IR-DilaraNeural
-    """
-    # پردازش متن قبل از ارسال به سرویس
-    clean_text = preprocess_persian_text(text)
+# ۱. مسیر ریشه (بسیار مهم برای رندر تا متوجه شود سایت روشن و سالم است)
+@app.get("/")
+def home():
+    return {"status": "healthy", "message": "پلتفرم اتوماسیون محتوا با موفقیت روی رندر فعال است."}
+
+# ۲. مسیر تولید صدا (API Endpoint)
+@app.post("/generate-voice/")
+async def generate_voice_api(request: TextRequest):
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="متن ورودی نمی‌تواند خالی باشد.")
     
-    # تنظیم سرعت روی +15% برای لحن سریع و تبلیغاتی
-    # همچنین ولوم صدا کمی تقویت شده تا انرژی بالاتری داشته باشد (+0%)
+    clean_text = preprocess_persian_text(request.text)
+    output_filename = "output_voice.mp3"
+    
+    # تنظیمات سرعت تبلیغاتی
     rate = "+15%"
     volume = "+0%"
     
-    print(f"🎙️ در حال تولید صدا با گوینده: {voice}...")
-    
     try:
-        communicate = Communicate(clean_text, voice, rate=rate, volume=volume)
+        communicate = Communicate(clean_text, request.voice, rate=rate, volume=volume)
         await communicate.save(output_filename)
-        print(f"✅ فایل صوتی با موفقیت در مسیر روبرو ذخیره شد: {os.path.abspath(output_filename)}")
+        
+        # بازگرداندن فایل صوتی ساخته شده به کاربر
+        if os.path.exists(output_filename):
+            return FileResponse(output_filename, media_type="audio/mpeg", filename=output_filename)
+        else:
+            raise HTTPException(status_code=500, detail="فایل صوتی ایجاد نشد.")
+            
     except Exception as e:
-        print(f"❌ خطایی در تولید صدا رخ داد: {e}")
+        raise HTTPException(status_code=500, detail=f"خطا در پردازش صدا: {str(e)}")
 
-# ۳. بخش تست اسکریپت (مخصوص اجرای محلی و تست اوليه)
+# اجرای سرور محلی (در صورت نیاز به تست روی کامپیوتر خودت)
 if __name__ == "__main__":
-    # متن نمونه تبلیغاتی برای تست
-    sample_text = (
-        "اگر به دنبال رشد کسب و کار خود هستید، این پلتفرم اتوماسیون محتوا "
-        "به شما کمک می‌کند تا با تخفیف ویژه، بهترین ویدیوهای اینستاگرام و یوتیوب را بسازید. "
-        "همین حالا خرید آنلاین خود را شروع کنید!"
-    )
-    
-    # انتخاب گوینده: fa-IR-FaridNeural (مرد) یا fa-IR-DilaraNeural (زن)
-    selected_voice = "fa-IR-FaridNeural"
-    output_file = "advertising_voice.mp3"
-    
-    # اجرای تابع ناهمگام
-    asyncio.run(generate_voice(sample_text, output_file, selected_voice))
+    import uvicorn
+    uvicorn.run("main.py:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), reload=True)
