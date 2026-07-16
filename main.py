@@ -54,16 +54,12 @@ def preprocess_persian_text(text: str) -> str:
 
 # ۱. ماژول تولید سناریو تبلیغاتی با Groq (Llama-3)
 async def generate_marketing_scenario(product_or_topic: str) -> str:
-    """
-    ارسال درخواست به Groq برای تولید یک سناریوی ویدیویی کوتاه، پرانرژی و جذاب تبلیغاتی به زبان فارسی.
-    """
     if not GROQ_API_KEY:
         logger.error("خطا: کلید GROQ_API_KEY در تنظیمات رندر تعریف نشده است!")
         return "لطفاً ابتدا کلید ای‌پی‌آی خود را در بخش Environment Variables رندر ست کنید."
 
     logger.info(f"🧠 در حال تولید سناریو برای: '{product_or_topic}' با هوش مصنوعی...")
     
-    # پرامپت مهندسی‌شده مخصوص ویدیوهای کوتاه تبلیغاتی
     prompt = f"""
     تو یک بازاریاب دیجیتال نابغه و کپی‌رایتر حرفه‌ای اینستاگرام و یوتیوب هستی.
     یک سناریوی ویدیویی کوتاه (حداکثر ۵۰ کلمه) برای موضوع یا محصول زیر بنویس:
@@ -103,10 +99,7 @@ async def generate_marketing_scenario(product_or_topic: str) -> str:
                 return "خطا در تولید متن تبلیغاتی."
 
 # ۲. ماژول تولید صدای تبلیغاتی پرانرژی با edge-tts
-async def generate_voice(text: str, output_filename: str = "advertising_voice.mp3", voice: str = "fa-IR-FaridNeural"):
-    """
-    تبدیل متن سناریو به فایل صوتی MP3 با سرعت بالا و انرژی زیاد.
-    """
+async def generate_voice(text: str, output_filename: str = "final_ad.mp3", voice: str = "fa-IR-FaridNeural"):
     clean_text = preprocess_persian_text(text)
     rate = "+15%"  # سرعت تند و پرانرژی برای ویدیوهای کوتاه
     
@@ -127,19 +120,23 @@ async def run_automation_pipeline(topic: str):
     # مرحله دوم: تولید هم‌زمان فایل صوتی از روی سناریو
     await generate_voice(scenario, output_filename="final_ad.mp3")
 
-# تابع اصلی برای اجرای موازی سرور سلامت و فرآیند پلتفرم
+# تابع اصلی اصلاح‌شده برای اجرای امن فرآیندها روی رندر
+async def async_main():
+    # ۱. نمونه تست اتوماتیک برای اطمینان از صحت کارکرد در اولین دپلوی
+    test_topic = "کفش ورزشی فوق‌العاده راحت با ۵۰ درصد تخفیف ویژه برای خرید آنلاین امروز"
+    await run_automation_pipeline(test_topic)
+
 def main():
     # ۱. روشن کردن سرور سلامت در پس‌زمینه (برای بیدار ماندن در رندر)
     threading.Thread(target=run_health_server, daemon=True).start()
 
-    # ۲. نمونه تست اتوماتیک برای اطمینان از صحت کارکرد در اولین دپلوی
-    test_topic = "کفش ورزشی فوق‌العاده راحت با ۵۰ درصد تخفیف ویژه برای خرید آنلاین امروز"
-    
-    # اجرای فرآیند ناهمگام در حلقه رویدادها
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run_automation_pipeline(test_topic))
+    # ۲. اجرای فرآیند ناهمگام به امن‌ترین روش ممکن در پایتون مدرن
+    try:
+        asyncio.run(async_main())
+    except Exception as e:
+        logger.error(f"خطای غیرمنتظره در حلقه اصلی: {e}")
 
-    # زنده نگه داشتن برنامه اصلی برای سرویس‌دهی سرور سلامت
+    # زنده نگه داشتن برنامه اصلی برای سرویس‌دهی سرور سلامت رندر
     import time
     while True:
         time.sleep(3600)
